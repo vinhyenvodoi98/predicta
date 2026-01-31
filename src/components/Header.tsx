@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CrystalBall, Chart, Briefcase, Sparkles } from "./icons";
+import { ConnectButton } from "./ConnectButton";
 
 export function Header() {
   return (
@@ -35,6 +36,7 @@ export function Header() {
               <Sparkles className="w-4 h-4" />
               Create
             </Link>
+            <ConnectButton />
           </nav>
         </div>
       </div>
