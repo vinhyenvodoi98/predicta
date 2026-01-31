@@ -1,6 +1,115 @@
 "use client";
 
 import { ConnectButton as RainbowConnectButton } from "@rainbow-me/rainbowkit";
+import { useEnsName } from "wagmi";
+
+function ConnectedWalletInfo({
+  account,
+  chain,
+  openAccountModal,
+  openChainModal,
+}: {
+  account: any;
+  chain: any;
+  openAccountModal: () => void;
+  openChainModal: () => void;
+}) {
+  const { data: ensName } = useEnsName({
+    address: account.address as `0x${string}`,
+  });
+
+  // Generate avatar background color from address
+  const getAvatarColor = (address: string) => {
+    const colors = [
+      "bg-indigo-500",
+      "bg-purple-500",
+      "bg-pink-500",
+      "bg-rose-500",
+      "bg-emerald-500",
+      "bg-cyan-500",
+    ];
+    const index = parseInt(address.slice(2, 4), 16) % colors.length;
+    return colors[index];
+  };
+
+  // Shorten address format
+  const shortenAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const displayName = ensName || shortenAddress(account.address);
+  const avatarText = ensName ? ensName.slice(0, 2) : account.displayName?.slice(0, 2) || "??";
+
+  return (
+    <div className="relative group">
+      {/* Avatar Button */}
+      <button
+        className={`flex items-center justify-center w-10 h-10 ${getAvatarColor(
+          account.address
+        )} border-4 border-white shadow-[2px_2px_0_0_rgba(255,255,255,0.5)] hover:shadow-[3px_3px_0_0_rgba(255,255,255,0.5)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all text-[10px] font-bold text-white uppercase`}
+        type="button"
+      >
+        {avatarText}
+      </button>
+
+      {/* Dropdown */}
+      <div className="absolute right-0 top-full mt-2 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+        <div className="bg-white border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)] p-4">
+          {/* Address Section */}
+          <div className="mb-4 pb-4 border-b-2 border-black border-dotted">
+            <div className="text-[8px] font-bold text-zinc-500 uppercase mb-2">
+              {ensName ? "ENS Name" : "Address"}
+            </div>
+            <button
+              onClick={openAccountModal}
+              className="text-[10px] font-bold text-zinc-900 hover:text-indigo-600 transition-colors text-left w-full"
+            >
+              {displayName}
+            </button>
+            {ensName && (
+              <div className="text-[8px] text-zinc-500 mt-1">
+                {shortenAddress(account.address)}
+              </div>
+            )}
+            {account.displayBalance && (
+              <div className="text-[10px] font-bold text-emerald-600 mt-2">
+                {account.displayBalance}
+              </div>
+            )}
+          </div>
+
+          {/* Network Section */}
+          <div>
+            <div className="text-[8px] font-bold text-zinc-500 uppercase mb-2">
+              Network
+            </div>
+            <button
+              onClick={openChainModal}
+              className="flex items-center gap-2 text-[10px] font-bold text-zinc-900 hover:text-indigo-600 transition-colors w-full"
+            >
+              {chain.hasIcon && chain.iconUrl && (
+                <img
+                  alt={chain.name ?? "Chain"}
+                  src={chain.iconUrl}
+                  className="w-4 h-4 rounded-full border-2 border-black"
+                />
+              )}
+              <span>{chain.name}</span>
+            </button>
+          </div>
+
+          {/* Disconnect Button */}
+          <button
+            onClick={openAccountModal}
+            className="mt-4 w-full text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all border-3 border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-[3px_3px_0_0_rgba(0,0,0,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 px-3 py-2 uppercase tracking-wide"
+          >
+            Disconnect
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function ConnectButton() {
   return (
@@ -57,88 +166,13 @@ export function ConnectButton() {
                 );
               }
 
-              // Generate avatar background color from address
-              const getAvatarColor = (address: string) => {
-                const colors = [
-                  "bg-indigo-500",
-                  "bg-purple-500",
-                  "bg-pink-500",
-                  "bg-rose-500",
-                  "bg-emerald-500",
-                  "bg-cyan-500",
-                ];
-                const index = parseInt(address.slice(2, 4), 16) % colors.length;
-                return colors[index];
-              };
-
-              // Shorten address format
-              const shortenAddress = (address: string) => {
-                return `${address.slice(0, 6)}...${address.slice(-4)}`;
-              };
-
               return (
-                <div className="relative group">
-                  {/* Avatar Button */}
-                  <button
-                    className={`flex items-center justify-center w-10 h-10 ${getAvatarColor(
-                      account.address
-                    )} border-4 border-white shadow-[2px_2px_0_0_rgba(255,255,255,0.5)] hover:shadow-[3px_3px_0_0_rgba(255,255,255,0.5)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all text-[10px] font-bold text-white uppercase`}
-                    type="button"
-                  >
-                    {account.displayName?.slice(0, 2) || "??"}
-                  </button>
-
-                  {/* Dropdown */}
-                  <div className="absolute right-0 top-full mt-2 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    <div className="bg-white border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)] p-4">
-                      {/* Address Section */}
-                      <div className="mb-4 pb-4 border-b-2 border-black border-dotted">
-                        <div className="text-[8px] font-bold text-zinc-500 uppercase mb-2">
-                          Address
-                        </div>
-                        <button
-                          onClick={openAccountModal}
-                          className="text-[10px] font-bold text-zinc-900 hover:text-indigo-600 transition-colors text-left w-full"
-                        >
-                          {shortenAddress(account.address)}
-                        </button>
-                        {account.displayBalance && (
-                          <div className="text-[10px] font-bold text-emerald-600 mt-2">
-                            {account.displayBalance}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Network Section */}
-                      <div>
-                        <div className="text-[8px] font-bold text-zinc-500 uppercase mb-2">
-                          Network
-                        </div>
-                        <button
-                          onClick={openChainModal}
-                          className="flex items-center gap-2 text-[10px] font-bold text-zinc-900 hover:text-indigo-600 transition-colors w-full"
-                        >
-                          {chain.hasIcon && chain.iconUrl && (
-                            <img
-                              alt={chain.name ?? "Chain"}
-                              src={chain.iconUrl}
-                              className="w-4 h-4 rounded-full border-2 border-black"
-                            />
-                          )}
-                          <span>{chain.name}</span>
-                        </button>
-                      </div>
-
-                      {/* Disconnect Button */}
-                      <button
-                        onClick={openAccountModal}
-                        className="mt-4 w-full text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all border-3 border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-[3px_3px_0_0_rgba(0,0,0,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 px-3 py-2 uppercase tracking-wide"
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <ConnectedWalletInfo
+                  account={account}
+                  chain={chain}
+                  openAccountModal={openAccountModal}
+                  openChainModal={openChainModal}
+                />
               );
             })()}
           </div>
