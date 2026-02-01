@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CrystalBall, Chart, Briefcase, Sparkles, Money } from "./icons";
 import { ConnectButton } from "./ConnectButton";
 import { DepositModal } from "./DepositModal";
+import { YellowAuthButton } from "./YellowAuthButton";
 
 export function Header() {
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
@@ -55,6 +56,11 @@ export function Header() {
           </div>
         </div>
       </header>
+
+      {/* Global Yellow Network Authentication */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <YellowAuthButton showStatus={true} />
+      </div>
 
       <DepositModal
         isOpen={isDepositModalOpen}
