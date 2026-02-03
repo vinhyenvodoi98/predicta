@@ -33,10 +33,9 @@ Deploy contracts and automatically export addresses for frontend:
 
 This will:
 - ✅ Deploy PredictionMarketFactory with Chainlink BTC/USD oracle
-- ✅ Create an example market "BTC-100K-2027"
 - ✅ Export contract addresses to `../src/config/deployed-contracts.json`
 - ✅ Export ABIs to `../src/config/abis/`
-- ✅ Generate TypeScript config at `../src/config/contracts.ts`
+- ✅ Ready to create markets from your frontend or CLI
 
 ## Contract Architecture
 

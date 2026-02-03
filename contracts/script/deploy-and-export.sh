@@ -18,6 +18,11 @@ fi
 # Load environment variables
 source .env
 
+# Build contracts first
+echo -e "${BLUE}Building contracts...${NC}"
+forge build
+echo -e "${GREEN}✓ Contracts built${NC}"
+
 # Run the deployment script and capture output
 DEPLOY_OUTPUT=$(forge script script/DeployFactory.s.sol:DeployFactory \
     --rpc-url $SEPOLIA_RPC_URL \
@@ -29,9 +34,6 @@ echo "$DEPLOY_OUTPUT"
 
 # Extract contract addresses from the output
 FACTORY_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "PredictionMarketFactory deployed to:" | awk '{print $NF}')
-MARKET_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "Example market created at:" | awk '{print $NF}')
-YES_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "YES Token:" | awk '{print $NF}')
-NO_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "NO Token:" | awk '{print $NF}')
 PRICE_FEED=$(echo "$DEPLOY_OUTPUT" | grep "Price Feed:" | awk '{print $NF}')
 
 # Verify addresses were extracted
@@ -42,9 +44,6 @@ fi
 
 echo -e "${GREEN}✓ Deployment successful!${NC}"
 echo "Factory Address: $FACTORY_ADDRESS"
-echo "Market Address: $MARKET_ADDRESS"
-echo "YES Token: $YES_TOKEN"
-echo "NO Token: $NO_TOKEN"
 echo "Price Feed: $PRICE_FEED"
 
 # Create src directory if it doesn't exist
@@ -61,12 +60,6 @@ cat > ../src/config/deployed-contracts.json << EOF
       "address": "$FACTORY_ADDRESS",
       "abi": "abis/PredictionMarketFactory.json"
     },
-    "ExampleMarket": {
-      "address": "$MARKET_ADDRESS",
-      "abi": "abis/BTCPredictionMarket.json",
-      "yesToken": "$YES_TOKEN",
-      "noToken": "$NO_TOKEN"
-    },
     "ChainlinkPriceFeed": {
       "address": "$PRICE_FEED",
       "pair": "BTC/USD"
@@ -82,17 +75,21 @@ echo -e "${BLUE}Exporting ABIs...${NC}"
 mkdir -p ../src/config/abis
 
 # Export Factory ABI
-forge inspect PredictionMarketFactory abi > ../src/config/abis/PredictionMarketFactory.json
+cat out/PredictionMarketFactory.sol/PredictionMarketFactory.json | jq '.abi' > ../src/config/abis/PredictionMarketFactory.abi.json
 echo -e "${GREEN}✓ Exported PredictionMarketFactory ABI${NC}"
 
-# Export Market ABI
-forge inspect BTCPredictionMarket abi > ../src/config/abis/BTCPredictionMarket.json
+# Export Market ABI (for reference when creating markets)
+cat out/BTCPredictionMarket.sol/BTCPredictionMarket.json | jq '.abi' > ../src/config/abis/BTCPredictionMarket.abi.json
 echo -e "${GREEN}✓ Exported BTCPredictionMarket ABI${NC}"
 
-# Export Token ABI
-forge inspect PredictionToken abi > ../src/config/abis/PredictionToken.json
+# Export Token ABI (for reference when interacting with tokens)
+cat out/PredictionToken.sol/PredictionToken.json | jq '.abi' > ../src/config/abis/PredictionToken.abi.json
 echo -e "${GREEN}✓ Exported PredictionToken ABI${NC}"
 
 echo -e "${GREEN}✓ All done! Frontend can now import from:${NC}"
 echo "  - Contract addresses: src/config/deployed-contracts.json"
-echo "  - ABIs: src/config/abis/*.json"
+echo "  - ABIs: src/config/abis/*.abi.json"
+echo ""
+echo -e "${BLUE}Next steps:${NC}"
+echo "  - Create markets using the factory contract"
+echo "  - Update your frontend to use: import { contracts } from '@/config/contracts'"

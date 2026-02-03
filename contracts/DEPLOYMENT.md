@@ -146,14 +146,11 @@ forge script script/DeployFactory.s.sol:DeployFactory \
 
 This will deploy:
 1. The PredictionMarketFactory contract
-2. An example market: "Will BTC reach $100k by 2027?"
 
 **Save the deployed addresses** from the output:
 ```
 PredictionMarketFactory deployed to: 0x...
-Example market created at: 0x...
-YES Token: 0x...
-NO Token: 0x...
+Price Feed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
 ```
 
 ### Deploy and Export for Frontend (Recommended)
@@ -165,11 +162,11 @@ For easier frontend integration, use the automated deployment script that export
 ```
 
 This script will:
-1. Deploy the PredictionMarketFactory and example market
-2. Extract all contract addresses from deployment output
+1. Deploy the PredictionMarketFactory contract
+2. Extract contract addresses from deployment output
 3. Export addresses to `../src/config/deployed-contracts.json`
 4. Export ABIs to `../src/config/abis/` directory
-5. Create a TypeScript config file at `../src/config/contracts.ts`
+5. Works with the TypeScript config file at `../src/config/contracts.ts`
 
 **Output structure:**
 
@@ -182,12 +179,6 @@ This script will:
     "PredictionMarketFactory": {
       "address": "0x...",
       "abi": "abis/PredictionMarketFactory.json"
-    },
-    "ExampleMarket": {
-      "address": "0x...",
-      "abi": "abis/BTCPredictionMarket.json",
-      "yesToken": "0x...",
-      "noToken": "0x..."
     },
     "ChainlinkPriceFeed": {
       "address": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
@@ -414,9 +405,15 @@ Then in your frontend:
 ```typescript
 import { contracts, deploymentInfo } from '@/config/contracts';
 
-// All addresses and ABIs are already configured!
+// Factory address is ready to use
 console.log(contracts.factory.address);
-console.log(contracts.exampleMarket.yesToken);
+
+// Create markets using the factory
+const { write: createMarket } = useWriteContract({
+  address: contracts.factory.address,
+  abi: contracts.factory.abi,
+  functionName: 'createSimpleMarket',
+});
 ```
 
 ### Manual Configuration
