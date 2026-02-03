@@ -1,6 +1,20 @@
 # Smart Contract Deployment Guide
 
-This guide walks you through deploying the PredictionMarket smart contract to Sepolia testnet using Foundry.
+This guide walks you through deploying the Predicta smart contracts to Sepolia testnet using Foundry.
+
+## Contract Overview
+
+This project includes two types of prediction market contracts:
+
+### 1. **PredictionMarket** (Simple)
+A basic prediction market where users can bet on binary outcomes and claim proportional winnings.
+
+### 2. **BTC Prediction Market System** (Token-Based with Factory Pattern)
+A sophisticated system for Bitcoin price predictions:
+- **PredictionMarketFactory**: Factory contract using CREATE2 for deterministic market creation
+- **BTCPredictionMarket**: Individual markets where users lock ETH and receive YES/NO tokens
+- **PredictionToken**: ERC20 tokens representing YES/NO positions that can be traded
+- Users can redeem winning tokens for ETH after market resolution
 
 ## Table of Contents
 
@@ -9,8 +23,12 @@ This guide walks you through deploying the PredictionMarket smart contract to Se
 - [Configuration](#configuration)
 - [Testing](#testing)
 - [Deployment](#deployment)
+  - [Deploy Simple PredictionMarket](#deploy-simple-predictionmarket)
+  - [Deploy BTC Prediction Factory](#deploy-btc-prediction-factory)
 - [Contract Verification](#contract-verification)
-- [Interacting with the Contract](#interacting-with-the-contract)
+- [Interacting with Contracts](#interacting-with-contracts)
+  - [BTC Prediction Market](#btc-prediction-market)
+  - [Simple Prediction Market](#simple-prediction-market)
 
 ## Prerequisites
 
@@ -74,22 +92,16 @@ forge install
 
 ## Testing
 
-Run the test suite to ensure everything works correctly:
+Run the test suite to ensure everything works:
 
 ```bash
 forge test
 ```
 
-Run tests with verbosity to see detailed output:
+Run specific test file:
 
 ```bash
-forge test -vvv
-```
-
-Run specific test:
-
-```bash
-forge test --match-test testCreateMarket -vvv
+forge test --match-path test/BTCPredictionMarket.t.sol -vvv
 ```
 
 Check test coverage:
@@ -98,17 +110,17 @@ Check test coverage:
 forge coverage
 ```
 
-## Deployment
-
-### 1. Compile Contracts
+Run tests with gas reporting:
 
 ```bash
-forge build
+forge test --gas-report
 ```
 
-### 2. Deploy to Sepolia
+## Deployment
 
-Deploy the PredictionMarket contract:
+### Deploy Simple PredictionMarket
+
+Deploy the basic prediction market contract:
 
 ```bash
 forge script script/DeployPredictionMarket.s.sol:DeployPredictionMarket \
@@ -119,124 +131,389 @@ forge script script/DeployPredictionMarket.s.sol:DeployPredictionMarket \
   -vvvv
 ```
 
-**Flags explanation:**
-- `--rpc-url`: RPC endpoint for Sepolia
-- `--private-key`: Your wallet private key
-- `--broadcast`: Actually send the transaction (omit for dry run)
-- `--verify`: Automatically verify on Etherscan
-- `-vvvv`: Verbose output
+### Deploy BTC Prediction Factory
 
-### 3. Dry Run (Simulation)
-
-Test deployment without broadcasting:
+Deploy the factory and an example BTC prediction market:
 
 ```bash
-forge script script/DeployPredictionMarket.s.sol:DeployPredictionMarket \
+forge script script/DeployFactory.s.sol:DeployFactory \
   --rpc-url $SEPOLIA_RPC_URL \
-  --private-key $PRIVATE_KEY
+  --private-key $PRIVATE_KEY \
+  --broadcast \
+  --verify \
+  -vvvv
 ```
 
-### 4. Save Deployment Address
+This will deploy:
+1. The PredictionMarketFactory contract
+2. An example market: "Will BTC reach $100k by 2027?"
 
-After deployment, the contract address will be displayed in the output. Save it for later use:
+**Save the deployed addresses** from the output:
+```
+PredictionMarketFactory deployed to: 0x...
+Example market created at: 0x...
+YES Token: 0x...
+NO Token: 0x...
+```
 
+### Deploy and Export for Frontend (Recommended)
+
+For easier frontend integration, use the automated deployment script that exports contract addresses and ABIs:
+
+```bash
+./script/deploy-and-export.sh
 ```
-PredictionMarket deployed to: 0x...
+
+This script will:
+1. Deploy the PredictionMarketFactory and example market
+2. Extract all contract addresses from deployment output
+3. Export addresses to `../src/config/deployed-contracts.json`
+4. Export ABIs to `../src/config/abis/` directory
+5. Create a TypeScript config file at `../src/config/contracts.ts`
+
+**Output structure:**
+
+```json
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployedAt": "2024-01-01T00:00:00Z",
+  "contracts": {
+    "PredictionMarketFactory": {
+      "address": "0x...",
+      "abi": "abis/PredictionMarketFactory.json"
+    },
+    "ExampleMarket": {
+      "address": "0x...",
+      "abi": "abis/BTCPredictionMarket.json",
+      "yesToken": "0x...",
+      "noToken": "0x..."
+    },
+    "ChainlinkPriceFeed": {
+      "address": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
+      "pair": "BTC/USD"
+    }
+  }
+}
 ```
+
+**Frontend usage:**
+
+```typescript
+// Import the auto-generated config
+import { contracts } from '@/config/contracts';
+
+// Use with wagmi/viem
+const { data } = useReadContract({
+  address: contracts.factory.address,
+  abi: contracts.factory.abi,
+  functionName: 'getMarketCount',
+});
+```
+
+**Note:** If you encounter a 401 authentication error during verification:
+- Deploy without the `--verify` flag first
+- Verify contracts manually after deployment (see Contract Verification section below)
+- Or ensure your `ETHERSCAN_API_KEY` is correctly set in `.env`
 
 ## Contract Verification
 
 If automatic verification fails, verify manually:
 
+**For Factory:**
 ```bash
 forge verify-contract \
-  <CONTRACT_ADDRESS> \
-  src/PredictionMarket.sol:PredictionMarket \
+  <FACTORY_ADDRESS> \
+  src/PredictionMarketFactory.sol:PredictionMarketFactory \
   --chain-id 11155111 \
   --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
-Check verification status on [Sepolia Etherscan](https://sepolia.etherscan.io/).
+**For Market:**
+```bash
+forge verify-contract \
+  <MARKET_ADDRESS> \
+  src/BTCPredictionMarket.sol:BTCPredictionMarket \
+  --chain-id 11155111 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(uint256,uint256,address,string)" 10000000000000 1735689600 <RESOLVER_ADDRESS> "BTC-100K-2027")
+```
 
-## Interacting with the Contract
+## Interacting with Contracts
 
-### Using Cast (Foundry CLI)
+### BTC Prediction Market
 
-1. **Create a market**:
-   ```bash
-   cast send <CONTRACT_ADDRESS> \
-     "createMarket(string,uint256)" \
-     "Will ETH reach $10k by 2026?" 604800 \
-     --rpc-url $SEPOLIA_RPC_URL \
-     --private-key $PRIVATE_KEY
-   ```
+#### 1. Create a New Market
 
-2. **Place a prediction** (send 0.1 ETH on "Yes"):
-   ```bash
-   cast send <CONTRACT_ADDRESS> \
-     "predict(uint256,bool)" 0 true \
-     --value 0.1ether \
-     --rpc-url $SEPOLIA_RPC_URL \
-     --private-key $PRIVATE_KEY
-   ```
+```bash
+cast send <FACTORY_ADDRESS> \
+  "createSimpleMarket(uint256,uint256,address,string)" \
+  10000000000000 \
+  1735689600 \
+  <RESOLVER_ADDRESS> \
+  "BTC-100K-2027" \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
 
-3. **Get market details**:
-   ```bash
-   cast call <CONTRACT_ADDRESS> \
-     "getMarket(uint256)" 0 \
-     --rpc-url $SEPOLIA_RPC_URL
-   ```
+Parameters:
+- `targetPrice`: BTC price in smallest unit (e.g., 10000000000000 = $100k with 8 decimals)
+- `resolutionTime`: Unix timestamp when market can be resolved
+- `resolver`: Address that can resolve the market (typically your address)
+- `marketName`: Human-readable market name
 
-4. **Get market count**:
-   ```bash
-   cast call <CONTRACT_ADDRESS> \
-     "getMarketCount()" \
-     --rpc-url $SEPOLIA_RPC_URL
-   ```
+#### 2. Mint YES Tokens (Bet BTC will be >= target)
 
-5. **Resolve a market** (after end time):
-   ```bash
-   cast send <CONTRACT_ADDRESS> \
-     "resolveMarket(uint256,bool)" 0 true \
-     --rpc-url $SEPOLIA_RPC_URL \
-     --private-key $PRIVATE_KEY
-   ```
+```bash
+cast send <MARKET_ADDRESS> \
+  "mintYes()" \
+  --value 0.1ether \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
 
-6. **Claim winnings**:
-   ```bash
-   cast send <CONTRACT_ADDRESS> \
-     "claim(uint256)" 0 \
-     --rpc-url $SEPOLIA_RPC_URL \
-     --private-key $PRIVATE_KEY
-   ```
+#### 3. Mint NO Tokens (Bet BTC will be < target)
 
-### Using Etherscan
+```bash
+cast send <MARKET_ADDRESS> \
+  "mintNo()" \
+  --value 0.1ether \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
 
-Once verified, you can interact with your contract directly on Etherscan:
+#### 4. Check Your Token Balance
 
-1. Go to your contract on [Sepolia Etherscan](https://sepolia.etherscan.io/)
-2. Click on the "Contract" tab
-3. Click on "Write Contract"
-4. Connect your wallet
-5. Call contract functions directly from the UI
+```bash
+# Get YES token address
+cast call <MARKET_ADDRESS> "yesToken()" --rpc-url $SEPOLIA_RPC_URL
+
+# Check YES token balance
+cast call <YES_TOKEN_ADDRESS> \
+  "balanceOf(address)" \
+  <YOUR_ADDRESS> \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+#### 5. Transfer Tokens (Trade Positions)
+
+```bash
+cast send <YES_TOKEN_ADDRESS> \
+  "transfer(address,uint256)" \
+  <RECIPIENT_ADDRESS> \
+  100000000000000000 \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
+
+#### 6. Get Market Information
+
+```bash
+cast call <MARKET_ADDRESS> \
+  "getMarketInfo()" \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+#### 7. Check Current Odds
+
+```bash
+cast call <MARKET_ADDRESS> \
+  "getCurrentOdds()" \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+Returns odds as basis points (e.g., 6000 = 60%)
+
+#### 8. Resolve Market (After Resolution Time)
+
+```bash
+cast send <MARKET_ADDRESS> \
+  "resolve(uint256)" \
+  10500000000000 \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
+
+Parameter is the actual BTC price at resolution time.
+
+#### 9. Calculate Your Potential Payout
+
+```bash
+cast call <MARKET_ADDRESS> \
+  "calculatePayout(address)" \
+  <YOUR_ADDRESS> \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+#### 10. Redeem Winning Tokens
+
+```bash
+cast send <MARKET_ADDRESS> \
+  "redeem()" \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
+
+#### Factory Functions
+
+**Get all markets:**
+```bash
+cast call <FACTORY_ADDRESS> \
+  "getMarketCount()" \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+**Get active markets:**
+```bash
+cast call <FACTORY_ADDRESS> \
+  "getActiveMarkets()" \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+**Get tradable markets:**
+```bash
+cast call <FACTORY_ADDRESS> \
+  "getTradableMarkets()" \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+**Compute market address before deployment:**
+```bash
+cast call <FACTORY_ADDRESS> \
+  "computeMarketAddress(uint256,uint256,address,string,bytes32)" \
+  10000000000000 \
+  1735689600 \
+  <RESOLVER_ADDRESS> \
+  "BTC-100K-2027" \
+  0x1234... \
+  --rpc-url $SEPOLIA_RPC_URL
+```
+
+### Simple Prediction Market
+
+See the original guide sections for interacting with the basic PredictionMarket contract.
 
 ## Frontend Integration
 
-After deployment, update your frontend configuration in [src/wagmi.ts](../src/wagmi.ts) or similar:
+### Automated Export (Recommended)
+
+Use the `deploy-and-export.sh` script for automatic frontend integration:
+
+```bash
+cd contracts
+./script/deploy-and-export.sh
+```
+
+This automatically creates:
+- `../src/config/deployed-contracts.json` - Contract addresses and metadata
+- `../src/config/contracts.ts` - TypeScript configuration with type safety
+- `../src/config/abis/` - All contract ABIs
+
+Then in your frontend:
 
 ```typescript
-export const PREDICTION_MARKET_ADDRESS = '0x...' as const;
+import { contracts, deploymentInfo } from '@/config/contracts';
 
-export const PREDICTION_MARKET_ABI = [
-  // Copy ABI from contracts/out/PredictionMarket.sol/PredictionMarket.json
+// All addresses and ABIs are already configured!
+console.log(contracts.factory.address);
+console.log(contracts.exampleMarket.yesToken);
+```
+
+### Manual Configuration
+
+Alternatively, manually configure your frontend:
+
+```typescript
+// contracts/config.ts
+export const PREDICTION_FACTORY_ADDRESS = '0x...' as const;
+export const EXAMPLE_MARKET_ADDRESS = '0x...' as const;
+
+// Get ABIs from compiled contracts
+export const FACTORY_ABI = [
+  // Copy from out/PredictionMarketFactory.sol/PredictionMarketFactory.json
+] as const;
+
+export const MARKET_ABI = [
+  // Copy from out/BTCPredictionMarket.sol/BTCPredictionMarket.json
+] as const;
+
+export const TOKEN_ABI = [
+  // Copy from out/PredictionToken.sol/PredictionToken.json
 ] as const;
 ```
 
-To get the ABI:
+To manually extract the ABIs:
 
 ```bash
-cat out/PredictionMarket.sol/PredictionMarket.json | jq .abi
+forge inspect PredictionMarketFactory abi > factory-abi.json
+forge inspect BTCPredictionMarket abi > market-abi.json
+forge inspect PredictionToken abi > token-abi.json
 ```
+
+## Example Frontend Integration (wagmi + viem)
+
+```typescript
+import { useReadContract, useWriteContract } from 'wagmi';
+import { parseEther } from 'viem';
+
+// Read market info
+const { data: marketInfo } = useReadContract({
+  address: MARKET_ADDRESS,
+  abi: MARKET_ABI,
+  functionName: 'getMarketInfo',
+});
+
+// Mint YES tokens
+const { writeContract } = useWriteContract();
+
+const mintYes = async () => {
+  await writeContract({
+    address: MARKET_ADDRESS,
+    abi: MARKET_ABI,
+    functionName: 'mintYes',
+    value: parseEther('0.1'),
+  });
+};
+
+// Check YES token balance
+const { data: yesTokenAddress } = useReadContract({
+  address: MARKET_ADDRESS,
+  abi: MARKET_ABI,
+  functionName: 'yesToken',
+});
+
+const { data: balance } = useReadContract({
+  address: yesTokenAddress,
+  abi: TOKEN_ABI,
+  functionName: 'balanceOf',
+  args: [userAddress],
+});
+```
+
+## Architecture Explanation
+
+### Token-Based System Flow
+
+1. **User locks ETH**: Calls `mintYes()` or `mintNo()` with ETH
+2. **Receives tokens**: Gets 1:1 ERC20 tokens (YES or NO)
+3. **Can trade**: Tokens are transferable, can trade positions
+4. **Market resolves**: Resolver provides actual BTC price
+5. **Winners redeem**: Users with winning tokens call `redeem()`
+6. **Proportional payout**: Winners split entire ETH pool proportionally
+
+### Why Factory Pattern?
+
+- **Scalability**: Create unlimited markets with one factory
+- **Gas efficiency**: CREATE2 allows deterministic addresses
+- **Discovery**: Easy to query all markets from factory
+- **Upgradability**: Can deploy new market versions
+
+### Why ERC20 Tokens?
+
+- **Tradability**: Users can trade positions before resolution
+- **Composability**: Tokens can integrate with DEXs, other DeFi
+- **Transparency**: Clear on-chain positions
+- **Flexibility**: Users can partially exit positions
 
 ## Useful Commands
 
@@ -250,59 +527,77 @@ cast balance <YOUR_ADDRESS> --rpc-url $SEPOLIA_RPC_URL
 cast receipt <TX_HASH> --rpc-url $SEPOLIA_RPC_URL
 ```
 
-**Get gas price:**
-```bash
-cast gas-price --rpc-url $SEPOLIA_RPC_URL
-```
-
 **Estimate gas:**
 ```bash
 cast estimate <CONTRACT_ADDRESS> \
-  "createMarket(string,uint256)" \
-  "Test Question" 86400 \
+  "mintYes()" \
+  --value 0.1ether \
   --rpc-url $SEPOLIA_RPC_URL
+```
+
+**Decode transaction data:**
+```bash
+cast 4byte-decode <TX_DATA>
 ```
 
 ## Troubleshooting
 
-### Issue: "Nonce too low"
-- **Solution**: Your transaction might be pending. Check pending transactions or wait a few minutes.
+### Issue: "Market trading has ended"
+- **Solution**: Cannot mint new tokens after resolution time. Wait for next market or create a new one.
+
+### Issue: "No winning tokens to redeem"
+- **Solution**: You either have no tokens, they're losing tokens, or you already redeemed.
+
+### Issue: "Only resolver can call"
+- **Solution**: Only the designated resolver address can resolve markets.
 
 ### Issue: "Insufficient funds"
 - **Solution**: Get more Sepolia ETH from a faucet.
 
-### Issue: "Contract verification failed"
-- **Solution**: Verify manually using the command in the [Contract Verification](#contract-verification) section.
+## Security Considerations
 
-### Issue: "RPC URL not responding"
-- **Solution**: Check your RPC URL is correct and the service is operational.
+⚠️ **Important Security Notes:**
+
+1. **Oracle risk**: This implementation relies on a trusted resolver for BTC price
+2. **Consider using Chainlink**: For production, integrate Chainlink Price Feeds
+3. **Test thoroughly**: Always test on testnet before mainnet
+4. **Audit contracts**: Get professional audits for production
+5. **Time delays**: Consider adding time delays for resolution
+6. **Emergency controls**: Consider adding pause functionality
+7. **Front-running**: Be aware of MEV risks with token minting
+
+## Production Checklist
+
+Before mainnet deployment:
+
+- [ ] Replace manual resolver with Chainlink oracle
+- [ ] Add comprehensive access controls
+- [ ] Implement pause functionality
+- [ ] Add re-entrancy guards (OpenZeppelin)
+- [ ] Professional security audit
+- [ ] Extensive testing with edge cases
+- [ ] Gas optimization
+- [ ] Add events for all state changes
+- [ ] Consider proxy patterns for upgradability
+- [ ] Set appropriate fees/treasury
 
 ## Resources
 
 - [Foundry Book](https://book.getfoundry.sh/)
 - [Foundry GitHub](https://github.com/foundry-rs/foundry)
 - [Sepolia Testnet Info](https://sepolia.dev/)
-- [Alchemy Docs](https://docs.alchemy.com/)
-- [Etherscan API Docs](https://docs.etherscan.io/)
-
-## Security Considerations
-
-⚠️ **Important Security Notes:**
-
-1. **Never commit private keys** to version control
-2. **Use a test wallet** for testnet deployments
-3. **Audit contracts** before mainnet deployment
-4. **Test thoroughly** on testnet before mainnet
-5. **Consider using a hardware wallet** for mainnet deployments
-6. **Implement access controls** for production contracts
-7. **Get professional audits** for production contracts handling real funds
+- [Chainlink Price Feeds](https://docs.chain.link/data-feeds/price-feeds)
+- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
 
 ## Next Steps
 
-1. Deploy your contract to Sepolia
-2. Verify the contract on Etherscan
-3. Test all functions using Cast or Etherscan
-4. Integrate the contract address and ABI into your frontend
-5. Build the UI to interact with your prediction market
+1. Deploy factory and create your first market
+2. Test minting YES/NO tokens
+3. Test token transfers
+4. Resolve market after resolution time
+5. Test redemption
+6. Integrate with frontend
+7. Build trading UI
+8. Add Chainlink integration for production
 
-For frontend integration examples, check the main [README.md](../README.md).
+For more help, check the main [README.md](../README.md).
