@@ -1,0 +1,15 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployedAt": "2026-02-03T07:57:38Z",
+  "contracts": {
+    "PredictionMarketFactory": {
+      "address": "0x59aA9E7Cafde02F8E0D0fFA9567621DD6529eAAc",
+      "abi": "abis/PredictionMarketFactory.json"
+    },
+    "ChainlinkPriceFeed": {
+      "address": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
+      "pair": "BTC/USD"
+    }
+  }
+}
