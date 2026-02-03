@@ -1,46 +1,56 @@
 "use client";
 
-import { useState } from "react";
+import { useState, use } from "react";
 import Link from "next/link";
-import { ComponentType } from "react";
-import { markets } from "@/data/markets";
+import { Address } from "viem";
+import { useMarketDetails } from "@/hooks/useMarketDetails";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Badge } from "@/components/Badge";
 import { Confetti } from "@/components/Confetti";
-import { Rocket, Lightbulb, Globe, Car, Chart, Target, Clock, Dice, Money } from "@/components/icons";
+import { Rocket, Target, Clock, Dice, Money } from "@/components/icons";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
-
-const categoryIcons: Record<string, ComponentType<{ className?: string }>> = {
-  Crypto: Rocket,
-  Technology: Lightbulb,
-  Space: Globe,
-  Climate: Globe,
-  Transportation: Car,
-};
 
 export default function MarketPage({ params }: PageProps) {
   const [shares, setShares] = useState<Record<string, number>>({});
   const [selectedOption, setSelectedOption] = useState<string>("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const resolvedParams = Promise.resolve(params).then((p) => p);
-  const [marketId, setMarketId] = useState<string>("");
 
-  resolvedParams.then((p) => setMarketId(p.id));
+  // Properly unwrap the Promise using React's use() hook
+  const { id: marketId } = use(params);
 
-  const market = markets.find((m) => m.id === marketId);
-  const CategoryIcon = market ? (categoryIcons[market.category] || Chart) : Chart;
+  // Fetch real market data from blockchain
+  const { market: blockchainMarket, isLoading, error } = useMarketDetails(marketId as Address);
 
-  if (!market) {
+  const CategoryIcon = Rocket; // Always use Crypto icon for BTC markets
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          <Card>
+            <div className="animate-pulse">
+              <div className="h-8 bg-zinc-200 rounded mb-4"></div>
+              <div className="h-4 bg-zinc-200 rounded mb-2"></div>
+              <div className="h-4 bg-zinc-200 rounded w-3/4"></div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !blockchainMarket) {
     return (
       <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <Card>
             <h1 className="text-2xl font-bold text-zinc-900">Market not found</h1>
+            <p className="text-zinc-600 mt-2">{error?.message || "Unable to load market data"}</p>
             <Link href="/" className="text-indigo-600 hover:text-indigo-700 mt-4 inline-block">
               Return to markets
             </Link>
@@ -49,6 +59,31 @@ export default function MarketPage({ params }: PageProps) {
       </div>
     );
   }
+
+  // Convert blockchain market to display format
+  const market = {
+    id: marketId,
+    title: blockchainMarket.marketName,
+    description: `Will BTC reach $${blockchainMarket.targetPrice.toLocaleString()} by ${new Date(blockchainMarket.resolutionTime * 1000).toLocaleDateString()}?`,
+    category: "Crypto",
+    endDate: new Date(blockchainMarket.resolutionTime * 1000).toISOString().split("T")[0],
+    totalVolume: parseFloat(blockchainMarket.totalEthLocked),
+    status: blockchainMarket.status,
+    options: [
+      {
+        id: "yes",
+        label: "Yes",
+        probability: blockchainMarket.yesProbability,
+        totalShares: parseFloat(blockchainMarket.yesTokenSupply),
+      },
+      {
+        id: "no",
+        label: "No",
+        probability: blockchainMarket.noProbability,
+        totalShares: parseFloat(blockchainMarket.noTokenSupply),
+      },
+    ],
+  };
 
   const handleShareChange = (optionId: string, value: string) => {
     const numValue = parseInt(value) || 0;
