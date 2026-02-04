@@ -1,7 +1,9 @@
 "use client";
 
 import { ConnectButton as RainbowConnectButton } from "@rainbow-me/rainbowkit";
-import { useEnsName } from "wagmi";
+import { useEnsName, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { contracts } from "@/config/contracts";
+import { useState } from "react";
 
 function ConnectedWalletInfo({
   account,
@@ -17,6 +19,32 @@ function ConnectedWalletInfo({
   const { data: ensName } = useEnsName({
     address: account.address as `0x${string}`,
   });
+
+  const [isMinting, setIsMinting] = useState(false);
+  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const handleFaucet = async () => {
+    try {
+      setIsMinting(true);
+      writeContract({
+        address: contracts.fakeUsdc.address,
+        abi: contracts.fakeUsdc.abi,
+        functionName: "mint",
+        args: [BigInt(100) * BigInt(10) ** BigInt(6)], // 100 USDC with 6 decimals
+      });
+    } catch (error) {
+      console.error("Faucet error:", error);
+      setIsMinting(false);
+    }
+  };
+
+  // Reset minting state when transaction is successful
+  if (isSuccess && isMinting) {
+    setTimeout(() => setIsMinting(false), 2000);
+  }
 
   // Generate avatar background color from address
   const getAvatarColor = (address: string) => {
@@ -79,7 +107,7 @@ function ConnectedWalletInfo({
           </div>
 
           {/* Network Section */}
-          <div>
+          <div className="mb-4 pb-4 border-b-2 border-black border-dotted">
             <div className="text-[8px] font-bold text-zinc-500 uppercase mb-2">
               Network
             </div>
@@ -98,10 +126,28 @@ function ConnectedWalletInfo({
             </button>
           </div>
 
+          {/* Faucet Button */}
+          <button
+            onClick={handleFaucet}
+            disabled={isPending || isConfirming || isMinting}
+            className="w-full text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-400 disabled:cursor-not-allowed transition-all border-3 border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-[3px_3px_0_0_rgba(0,0,0,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-[2px_2px_0_0_rgba(0,0,0,1)] px-3 py-2 uppercase tracking-wide"
+          >
+            {isPending || isConfirming ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                {isPending ? "Confirming..." : "Processing..."}
+              </span>
+            ) : isSuccess && isMinting ? (
+              "✓ Got 100 fUSDC!"
+            ) : (
+              "🚰 Get 100 fUSDC"
+            )}
+          </button>
+
           {/* Disconnect Button */}
           <button
             onClick={openAccountModal}
-            className="mt-4 w-full text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all border-3 border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-[3px_3px_0_0_rgba(0,0,0,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 px-3 py-2 uppercase tracking-wide"
+            className="mt-3 w-full text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all border-3 border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-[3px_3px_0_0_rgba(0,0,0,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 px-3 py-2 uppercase tracking-wide"
           >
             Disconnect
           </button>

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useBalance, useEnsName, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
-import { parseEther } from "viem";
+import { useAccount, useBalance, useEnsName, useSendTransaction, useWaitForTransactionReceipt, useReadContract } from "wagmi";
+import { parseEther, formatUnits } from "viem";
+import { contracts } from "@/config/contracts";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -21,6 +22,22 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
   const { data: balance } = useBalance({
     address: address as `0x${string}`,
   });
+
+  // Get USDC balance
+  const { data: usdcBalance } = useReadContract({
+    address: contracts.fakeUsdc.address,
+    abi: contracts.fakeUsdc.abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  });
+
+  // Format USDC balance (6 decimals)
+  const formattedUsdcBalance = usdcBalance
+    ? parseFloat(formatUnits(usdcBalance as bigint, 6)).toFixed(2)
+    : "0.00";
 
   // Placeholder for deposit address (will be updated later)
   const DEPOSIT_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -93,13 +110,16 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
 
         {/* Content */}
         <div className="p-6">
-          {/* Predicta Balance */}
-          <div className="mb-6 bg-zinc-50 border-4 border-black p-4">
-            <div className="text-[8px] font-bold text-zinc-500 uppercase mb-2">
-              Predicta Balance
+          {/* FakeUSDC Balance */}
+          <div className="mb-6 bg-emerald-50 border-4 border-emerald-600 p-4">
+            <div className="text-[8px] font-bold text-emerald-700 uppercase mb-2">
+              FakeUSDC Balance
             </div>
-            <div className="text-[20px] font-bold text-zinc-900">
-              $0.00
+            <div className="text-[20px] font-bold text-emerald-900">
+              {formattedUsdcBalance} fUSDC
+            </div>
+            <div className="text-[8px] text-emerald-600 mt-1">
+              Testnet currency for prediction markets
             </div>
           </div>
 
@@ -126,8 +146,13 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
                         </div>
                       )}
                     </div>
-                    <div className="text-[12px] font-bold text-emerald-600">
-                      {balance ? `${parseFloat(balance.formatted).toFixed(4)} ${balance.symbol}` : "0.0000 ETH"}
+                    <div className="text-right">
+                      <div className="text-[12px] font-bold text-emerald-600">
+                        {balance ? `${parseFloat(balance.formatted).toFixed(4)} ${balance.symbol}` : "0.0000 ETH"}
+                      </div>
+                      <div className="text-[10px] font-bold text-indigo-600 mt-1">
+                        {formattedUsdcBalance} fUSDC
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -226,11 +251,16 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
                   <div className="text-[10px] font-bold text-zinc-900">
                     {ensName || shortenAddress(address)}
                   </div>
-                  {balance && (
-                    <div className="text-[8px] text-zinc-500 mt-1">
-                      Balance: {parseFloat(balance.formatted).toFixed(4)} {balance.symbol}
+                  <div className="mt-2 space-y-1">
+                    {balance && (
+                      <div className="text-[8px] text-zinc-500">
+                        ETH: {parseFloat(balance.formatted).toFixed(4)} {balance.symbol}
+                      </div>
+                    )}
+                    <div className="text-[8px] text-emerald-600 font-bold">
+                      fUSDC: {formattedUsdcBalance}
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
