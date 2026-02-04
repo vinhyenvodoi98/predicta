@@ -5,16 +5,22 @@ import {Test, console} from "forge-std/Test.sol";
 import {PredictionMarketFactory} from "../src/PredictionMarketFactory.sol";
 import {BTCPredictionMarket} from "../src/BTCPredictionMarket.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
+import {FakeUSDC} from "../src/FakeUSDC.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract PredictionMarketFactoryTest is Test {
     PredictionMarketFactory public factory;
     MockV3Aggregator public priceFeed;
+    FakeUSDC public usdc;
     address public alice = makeAddr("alice");
 
     function setUp() public {
+        // Deploy mock USDC at the expected address
+        vm.etch(0xd4B33626446507C2464671155334ee702502BC71, address(new FakeUSDC()).code);
+        usdc = FakeUSDC(0xd4B33626446507C2464671155334ee702502BC71);
+
         priceFeed = new MockV3Aggregator(8, 95_000e8);
         factory = new PredictionMarketFactory(address(priceFeed));
-        vm.deal(alice, 100 ether);
     }
 
     function testCreateMarket() public {
@@ -178,12 +184,22 @@ contract PredictionMarketFactoryTest is Test {
 
         BTCPredictionMarket market = BTCPredictionMarket(marketAddress);
 
-        // Alice can mint YES tokens
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        // Get USDC instance
+        IERC20 usdc = market.usdc();
 
-        assertEq(market.yesToken().balanceOf(alice), 1 ether);
-        assertEq(market.totalEthLocked(), 1 ether);
+        // Mint USDC to alice
+        FakeUSDC(address(usdc)).mintTo(alice, 10000 * 10**6);
+
+        uint256 amount = 1000 * 10**6; // 1000 USDC
+
+        // Alice can mint YES tokens
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        assertEq(market.yesToken().balanceOf(alice), amount);
+        assertEq(market.totalUsdcLocked(), amount);
     }
 
     function testCannotCreateSameMarketWithSameSalt() public {

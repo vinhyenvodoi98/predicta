@@ -3,19 +3,21 @@ pragma solidity ^0.8.20;
 
 import "./PredictionToken.sol";
 import "chainlink-brownie-contracts/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title BTCPredictionMarket
  * @dev Binary prediction market for BTC price with YES/NO tokens
  * Uses Chainlink Price Feed for decentralized price oracle
- * Users lock ETH and receive YES or NO tokens (1:1 with ETH)
- * After resolution, winning tokens can be redeemed for ETH from the pool
+ * Users lock USDC and receive YES or NO tokens (1:1 with USDC)
+ * After resolution, winning tokens can be redeemed for USDC from the pool
  */
 contract BTCPredictionMarket {
     // Market parameters
     uint256 public immutable targetPrice;      // BTC price threshold in USD (e.g., 10000000000000 for $100k with 8 decimals)
     uint256 public immutable resolutionTime;   // Timestamp when market can be resolved
     AggregatorV3Interface public immutable priceFeed; // Chainlink BTC/USD price feed
+    IERC20 public immutable usdc;              // USDC token for collateral
 
     // Market state
     bool public resolved;
@@ -26,12 +28,12 @@ contract BTCPredictionMarket {
     PredictionToken public immutable yesToken;
     PredictionToken public immutable noToken;
 
-    // Total ETH locked
-    uint256 public totalEthLocked;
+    // Total USDC locked
+    uint256 public totalUsdcLocked;
 
     event PositionMinted(address indexed user, bool isYes, uint256 amount);
     event MarketResolved(bool btcAboveTarget, uint256 actualPrice);
-    event TokensRedeemed(address indexed user, bool isYes, uint256 tokenAmount, uint256 ethAmount);
+    event TokensRedeemed(address indexed user, bool isYes, uint256 tokenAmount, uint256 usdcAmount);
 
     modifier onlyBeforeResolution() {
         require(block.timestamp < resolutionTime, "Market trading has ended");
@@ -57,6 +59,7 @@ contract BTCPredictionMarket {
         targetPrice = _targetPrice;
         resolutionTime = _resolutionTime;
         priceFeed = AggregatorV3Interface(_priceFeed);
+        usdc = IERC20(0xd4B33626446507C2464671155334ee702502BC71);
 
         // Create YES and NO tokens
         yesToken = new PredictionToken(
@@ -70,29 +73,37 @@ contract BTCPredictionMarket {
     }
 
     /**
-     * @dev Mint YES tokens by locking ETH
-     * Mints 1 YES token per 1 ETH locked
+     * @dev Mint YES tokens by locking USDC
+     * Mints 1 YES token per 1 USDC locked
+     * User must approve this contract to spend their USDC first
      */
-    function mintYes() external payable onlyBeforeResolution {
-        require(msg.value > 0, "Must send ETH");
+    function mintYes(uint256 amount) external onlyBeforeResolution {
+        require(amount > 0, "Must lock USDC");
 
-        totalEthLocked += msg.value;
-        yesToken.mint(msg.sender, msg.value);
+        // Transfer USDC from user to contract
+        require(usdc.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
 
-        emit PositionMinted(msg.sender, true, msg.value);
+        totalUsdcLocked += amount;
+        yesToken.mint(msg.sender, amount);
+
+        emit PositionMinted(msg.sender, true, amount);
     }
 
     /**
-     * @dev Mint NO tokens by locking ETH
-     * Mints 1 NO token per 1 ETH locked
+     * @dev Mint NO tokens by locking USDC
+     * Mints 1 NO token per 1 USDC locked
+     * User must approve this contract to spend their USDC first
      */
-    function mintNo() external payable onlyBeforeResolution {
-        require(msg.value > 0, "Must send ETH");
+    function mintNo(uint256 amount) external onlyBeforeResolution {
+        require(amount > 0, "Must lock USDC");
 
-        totalEthLocked += msg.value;
-        noToken.mint(msg.sender, msg.value);
+        // Transfer USDC from user to contract
+        require(usdc.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
 
-        emit PositionMinted(msg.sender, false, msg.value);
+        totalUsdcLocked += amount;
+        noToken.mint(msg.sender, amount);
+
+        emit PositionMinted(msg.sender, false, amount);
     }
 
     /**
@@ -116,7 +127,7 @@ contract BTCPredictionMarket {
     }
 
     /**
-     * @dev Redeem winning tokens for ETH
+     * @dev Redeem winning tokens for USDC
      * If BTC >= target, YES tokens win. Otherwise NO tokens win.
      * Each winning token redeems proportionally from total pool
      */
@@ -139,16 +150,15 @@ contract BTCPredictionMarket {
             payout = userWinningTokens;
         } else {
             // Winners split entire pool proportionally
-            payout = (userWinningTokens * totalEthLocked) / totalWinningTokens;
+            payout = (userWinningTokens * totalUsdcLocked) / totalWinningTokens;
         }
 
         // Burn the tokens
         winningToken.burn(msg.sender, userWinningTokens);
-        totalEthLocked -= payout;
+        totalUsdcLocked -= payout;
 
-        // Transfer ETH
-        (bool success, ) = payable(msg.sender).call{value: payout}("");
-        require(success, "ETH transfer failed");
+        // Transfer USDC
+        require(usdc.transfer(msg.sender, payout), "USDC transfer failed");
 
         emit TokensRedeemed(msg.sender, btcAboveTarget, userWinningTokens, payout);
     }
@@ -162,12 +172,13 @@ contract BTCPredictionMarket {
         bool _resolved,
         bool _btcAboveTarget,
         uint256 _actualPrice,
-        uint256 _totalEthLocked,
+        uint256 _totalUsdcLocked,
         uint256 _yesTokenSupply,
         uint256 _noTokenSupply,
         address _yesToken,
         address _noToken,
-        address _priceFeed
+        address _priceFeed,
+        address _usdc
     ) {
         return (
             targetPrice,
@@ -175,12 +186,13 @@ contract BTCPredictionMarket {
             resolved,
             btcAboveTarget,
             actualPrice,
-            totalEthLocked,
+            totalUsdcLocked,
             yesToken.totalSupply(),
             noToken.totalSupply(),
             address(yesToken),
             address(noToken),
-            address(priceFeed)
+            address(priceFeed),
+            address(usdc)
         );
     }
 
@@ -202,7 +214,7 @@ contract BTCPredictionMarket {
         if (totalLosingTokens == 0) {
             return userWinningTokens;
         } else {
-            return (userWinningTokens * totalEthLocked) / totalWinningTokens;
+            return (userWinningTokens * totalUsdcLocked) / totalWinningTokens;
         }
     }
 

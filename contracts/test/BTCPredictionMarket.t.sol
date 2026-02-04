@@ -5,10 +5,13 @@ import {Test, console} from "forge-std/Test.sol";
 import {BTCPredictionMarket} from "../src/BTCPredictionMarket.sol";
 import {PredictionToken} from "../src/PredictionToken.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
+import {FakeUSDC} from "../src/FakeUSDC.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract BTCPredictionMarketTest is Test {
     BTCPredictionMarket public market;
     MockV3Aggregator public priceFeed;
+    FakeUSDC public usdc;
 
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
@@ -17,8 +20,13 @@ contract BTCPredictionMarketTest is Test {
     uint256 constant TARGET_PRICE = 100_000e8; // $100k (8 decimals)
     uint256 constant RESOLUTION_TIME = 365 days;
     int256 constant INITIAL_PRICE = 95_000e8; // $95k initial price
+    uint256 constant INITIAL_USDC = 100_000 * 10**6; // 100k USDC per user
 
     function setUp() public {
+        // Deploy mock USDC at the expected address
+        vm.etch(0xd4B33626446507C2464671155334ee702502BC71, address(new FakeUSDC()).code);
+        usdc = FakeUSDC(0xd4B33626446507C2464671155334ee702502BC71);
+
         // Deploy mock price feed with 8 decimals and initial price
         priceFeed = new MockV3Aggregator(8, INITIAL_PRICE);
 
@@ -30,9 +38,13 @@ contract BTCPredictionMarketTest is Test {
             "BTC-100K-2026"
         );
 
-        vm.deal(alice, 100 ether);
-        vm.deal(bob, 100 ether);
-        vm.deal(charlie, 100 ether);
+        // Mint USDC to test users
+        usdc.mint(INITIAL_USDC);
+        usdc.transfer(alice, INITIAL_USDC);
+        usdc.mint(INITIAL_USDC);
+        usdc.transfer(bob, INITIAL_USDC);
+        usdc.mint(INITIAL_USDC);
+        usdc.transfer(charlie, INITIAL_USDC);
     }
 
     function testMarketCreation() public {
@@ -40,43 +52,61 @@ contract BTCPredictionMarketTest is Test {
         assertEq(market.resolutionTime(), block.timestamp + RESOLUTION_TIME);
         assertEq(address(market.priceFeed()), address(priceFeed));
         assertEq(market.resolved(), false);
-        assertEq(market.totalEthLocked(), 0);
+        assertEq(market.totalUsdcLocked(), 0);
+        assertEq(address(market.usdc()), address(usdc));
     }
 
     function testMintYesTokens() public {
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
+
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
 
         PredictionToken yesToken = market.yesToken();
-        assertEq(yesToken.balanceOf(alice), 1 ether);
-        assertEq(market.totalEthLocked(), 1 ether);
+        assertEq(yesToken.balanceOf(alice), amount);
+        assertEq(market.totalUsdcLocked(), amount);
     }
 
     function testMintNoTokens() public {
-        vm.prank(bob);
-        market.mintNo{value: 2 ether}();
+        uint256 amount = 2000 * 10**6; // 2000 USDC
+
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         PredictionToken noToken = market.noToken();
-        assertEq(noToken.balanceOf(bob), 2 ether);
-        assertEq(market.totalEthLocked(), 2 ether);
+        assertEq(noToken.balanceOf(bob), amount);
+        assertEq(market.totalUsdcLocked(), amount);
     }
 
     function testCannotMintAfterResolutionTime() public {
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
 
-        vm.prank(alice);
+        uint256 amount = 1000 * 10**6;
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
         vm.expectRevert("Market trading has ended");
-        market.mintYes{value: 1 ether}();
+        market.mintYes(amount);
+        vm.stopPrank();
     }
 
     function testResolveYesWins() public {
-        // Alice bets YES with 1 ETH
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
 
-        // Bob bets NO with 1 ETH
-        vm.prank(bob);
-        market.mintNo{value: 1 ether}();
+        // Alice bets YES
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        // Bob bets NO
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         // Warp to resolution time
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
@@ -93,13 +123,19 @@ contract BTCPredictionMarketTest is Test {
     }
 
     function testResolveNoWins() public {
-        // Alice bets YES with 1 ETH
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
 
-        // Bob bets NO with 1 ETH
-        vm.prank(bob);
-        market.mintNo{value: 1 ether}();
+        // Alice bets YES
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        // Bob bets NO
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         // Warp to resolution time
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
@@ -116,13 +152,19 @@ contract BTCPredictionMarketTest is Test {
     }
 
     function testRedeemYesWinner() public {
-        // Alice bets YES with 1 ETH
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
 
-        // Bob bets NO with 1 ETH
-        vm.prank(bob);
-        market.mintNo{value: 1 ether}();
+        // Alice bets YES
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        // Bob bets NO
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         // Warp and resolve (YES wins)
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
@@ -130,24 +172,30 @@ contract BTCPredictionMarketTest is Test {
         market.resolve();
 
         // Alice redeems her winning YES tokens
-        uint256 aliceBalanceBefore = alice.balance;
+        uint256 aliceUsdcBefore = usdc.balanceOf(alice);
         vm.prank(alice);
         market.redeem();
-        uint256 aliceBalanceAfter = alice.balance;
+        uint256 aliceUsdcAfter = usdc.balanceOf(alice);
 
-        // Alice should get all 2 ETH (her 1 ETH + Bob's 1 ETH)
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, 2 ether);
+        // Alice should get all 2000 USDC (her 1000 + Bob's 1000)
+        assertEq(aliceUsdcAfter - aliceUsdcBefore, amount * 2);
         assertEq(market.yesToken().balanceOf(alice), 0); // Tokens burned
     }
 
     function testRedeemNoWinner() public {
-        // Alice bets YES with 1 ETH
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
 
-        // Bob bets NO with 1 ETH
-        vm.prank(bob);
-        market.mintNo{value: 1 ether}();
+        // Alice bets YES
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        // Bob bets NO
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         // Warp and resolve (NO wins)
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
@@ -155,54 +203,68 @@ contract BTCPredictionMarketTest is Test {
         market.resolve();
 
         // Bob redeems his winning NO tokens
-        uint256 bobBalanceBefore = bob.balance;
+        uint256 bobUsdcBefore = usdc.balanceOf(bob);
         vm.prank(bob);
         market.redeem();
-        uint256 bobBalanceAfter = bob.balance;
+        uint256 bobUsdcAfter = usdc.balanceOf(bob);
 
-        // Bob should get all 2 ETH
-        assertEq(bobBalanceAfter - bobBalanceBefore, 2 ether);
+        // Bob should get all 2000 USDC
+        assertEq(bobUsdcAfter - bobUsdcBefore, amount * 2);
         assertEq(market.noToken().balanceOf(bob), 0);
     }
 
     function testProportionalPayout() public {
-        // Alice bets YES with 1 ETH
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount1 = 1000 * 10**6; // 1000 USDC
+        uint256 amount2 = 2000 * 10**6; // 2000 USDC
+        uint256 amount3 = 3000 * 10**6; // 3000 USDC
 
-        // Bob bets YES with 2 ETH
-        vm.prank(bob);
-        market.mintYes{value: 2 ether}();
+        // Alice bets YES with 1000 USDC
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount1);
+        market.mintYes(amount1);
+        vm.stopPrank();
 
-        // Charlie bets NO with 3 ETH
-        vm.prank(charlie);
-        market.mintNo{value: 3 ether}();
+        // Bob bets YES with 2000 USDC
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount2);
+        market.mintYes(amount2);
+        vm.stopPrank();
 
-        // Total pool: 6 ETH, YES: 3 ETH, NO: 3 ETH
+        // Charlie bets NO with 3000 USDC
+        vm.startPrank(charlie);
+        usdc.approve(address(market), amount3);
+        market.mintNo(amount3);
+        vm.stopPrank();
+
+        // Total pool: 6000 USDC, YES: 3000, NO: 3000
         // Warp and resolve (YES wins)
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
         priceFeed.updateAnswer(int256(TARGET_PRICE));
         market.resolve();
 
-        // Alice has 1/3 of YES tokens, should get 2 ETH (1/3 of 6 ETH)
-        uint256 aliceBalanceBefore = alice.balance;
+        // Alice has 1/3 of YES tokens, should get 2000 USDC (1/3 of 6000)
+        uint256 aliceUsdcBefore = usdc.balanceOf(alice);
         vm.prank(alice);
         market.redeem();
-        uint256 aliceBalanceAfter = alice.balance;
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, 2 ether);
+        uint256 aliceUsdcAfter = usdc.balanceOf(alice);
+        assertEq(aliceUsdcAfter - aliceUsdcBefore, 2000 * 10**6);
 
-        // Bob has 2/3 of YES tokens, should get 4 ETH (2/3 of 6 ETH)
-        uint256 bobBalanceBefore = bob.balance;
+        // Bob has 2/3 of YES tokens, should get 4000 USDC (2/3 of 6000)
+        uint256 bobUsdcBefore = usdc.balanceOf(bob);
         vm.prank(bob);
         market.redeem();
-        uint256 bobBalanceAfter = bob.balance;
-        assertEq(bobBalanceAfter - bobBalanceBefore, 4 ether);
+        uint256 bobUsdcAfter = usdc.balanceOf(bob);
+        assertEq(bobUsdcAfter - bobUsdcBefore, 4000 * 10**6);
     }
 
     function testOneSidedMarket() public {
-        // Only Alice bets YES with 1 ETH
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
+
+        // Only Alice bets YES
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
 
         // No one bets NO
         // Warp and resolve (YES wins)
@@ -210,20 +272,26 @@ contract BTCPredictionMarketTest is Test {
         priceFeed.updateAnswer(int256(TARGET_PRICE));
         market.resolve();
 
-        // Alice should get her 1 ETH back (1:1 redemption)
-        uint256 aliceBalanceBefore = alice.balance;
+        // Alice should get her 1000 USDC back (1:1 redemption)
+        uint256 aliceUsdcBefore = usdc.balanceOf(alice);
         vm.prank(alice);
         market.redeem();
-        uint256 aliceBalanceAfter = alice.balance;
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, 1 ether);
+        uint256 aliceUsdcAfter = usdc.balanceOf(alice);
+        assertEq(aliceUsdcAfter - aliceUsdcBefore, amount);
     }
 
     function testCannotRedeemLosingTokens() public {
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
 
-        vm.prank(bob);
-        market.mintNo{value: 1 ether}();
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
         priceFeed.updateAnswer(int256(TARGET_PRICE)); // YES wins
@@ -252,34 +320,44 @@ contract BTCPredictionMarketTest is Test {
     }
 
     function testTokenTransfer() public {
+        uint256 amount = 1000 * 10**6; // 1000 USDC
+
         // Alice mints YES tokens
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
 
         // Get the YES token
         PredictionToken yesToken = market.yesToken();
 
-        // Alice transfers to Bob
+        // Alice transfers half to Bob
         vm.prank(alice);
-        yesToken.transfer(bob, 0.5 ether);
+        yesToken.transfer(bob, amount / 2);
 
-        assertEq(yesToken.balanceOf(alice), 0.5 ether);
-        assertEq(yesToken.balanceOf(bob), 0.5 ether);
+        assertEq(yesToken.balanceOf(alice), amount / 2);
+        assertEq(yesToken.balanceOf(bob), amount / 2);
     }
 
     function testCalculatePayout() public {
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount = 1000 * 10**6; // 1000 USDC
 
-        vm.prank(bob);
-        market.mintNo{value: 1 ether}();
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount);
+        market.mintYes(amount);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount);
+        market.mintNo(amount);
+        vm.stopPrank();
 
         vm.warp(block.timestamp + RESOLUTION_TIME + 1);
         priceFeed.updateAnswer(int256(TARGET_PRICE)); // YES wins
         market.resolve();
 
         uint256 alicePayout = market.calculatePayout(alice);
-        assertEq(alicePayout, 2 ether);
+        assertEq(alicePayout, amount * 2);
 
         uint256 bobPayout = market.calculatePayout(bob);
         assertEq(bobPayout, 0);
@@ -291,13 +369,20 @@ contract BTCPredictionMarketTest is Test {
         assertEq(yesOdds, 5000);
         assertEq(noOdds, 5000);
 
-        // Alice bets 1 ETH YES
-        vm.prank(alice);
-        market.mintYes{value: 1 ether}();
+        uint256 amount1 = 1000 * 10**6; // 1000 USDC
+        uint256 amount3 = 3000 * 10**6; // 3000 USDC
 
-        // Bob bets 3 ETH NO
-        vm.prank(bob);
-        market.mintNo{value: 3 ether}();
+        // Alice bets 1000 USDC YES
+        vm.startPrank(alice);
+        usdc.approve(address(market), amount1);
+        market.mintYes(amount1);
+        vm.stopPrank();
+
+        // Bob bets 3000 USDC NO
+        vm.startPrank(bob);
+        usdc.approve(address(market), amount3);
+        market.mintNo(amount3);
+        vm.stopPrank();
 
         // Odds should be 25% YES, 75% NO
         (yesOdds, noOdds) = market.getCurrentOdds();
@@ -322,23 +407,25 @@ contract BTCPredictionMarketTest is Test {
             bool _resolved,
             bool _btcAboveTarget,
             uint256 _actualPrice,
-            uint256 _totalEthLocked,
+            uint256 _totalUsdcLocked,
             uint256 _yesTokenSupply,
             uint256 _noTokenSupply,
             address _yesToken,
             address _noToken,
-            address _priceFeed
+            address _priceFeed,
+            address _usdc
         ) = market.getMarketInfo();
 
         assertEq(_targetPrice, TARGET_PRICE);
         assertEq(_resolutionTime, block.timestamp + RESOLUTION_TIME);
         assertEq(_resolved, false);
         assertEq(_actualPrice, 0);
-        assertEq(_totalEthLocked, 0);
+        assertEq(_totalUsdcLocked, 0);
         assertEq(_yesTokenSupply, 0);
         assertEq(_noTokenSupply, 0);
         assertTrue(_yesToken != address(0));
         assertTrue(_noToken != address(0));
         assertEq(_priceFeed, address(priceFeed));
+        assertEq(_usdc, address(usdc));
     }
 }
