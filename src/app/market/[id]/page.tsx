@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, useEffect } from "react";
 import Link from "next/link";
-import { Address } from "viem";
+import { Address, parseUnits } from "viem";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { useMarketDetails } from "@/hooks/useMarketDetails";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Badge } from "@/components/Badge";
 import { Confetti } from "@/components/Confetti";
 import { Rocket, Target, Clock, Dice, Money } from "@/components/icons";
+import { contracts } from "@/config/contracts";
+import BTCPredictionMarketABI from "@/config/abis/BTCPredictionMarket.abi.json";
+import { calculateLMSRCost } from "@/utils/lmsr";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -19,12 +23,75 @@ export default function MarketPage({ params }: PageProps) {
   const [selectedOption, setSelectedOption] = useState<string>("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [pendingOption, setPendingOption] = useState<string>("");
 
   // Properly unwrap the Promise using React's use() hook
   const { id: marketId } = use(params);
 
+  // Wallet connection
+  const { address } = useAccount();
+
   // Fetch real market data from blockchain
-  const { market: blockchainMarket, isLoading, error } = useMarketDetails(marketId as Address);
+  const { market: blockchainMarket, isLoading, error, refetch: refetchMarket } = useMarketDetails(marketId as Address);
+
+  // Contract interaction hooks
+  const { writeContract: writeApprove, data: approveHash, isPending: isApprovePending } = useWriteContract();
+  const { writeContract: writeMint, data: mintHash, isPending: isMintPending } = useWriteContract();
+
+  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
+    hash: approveHash,
+  });
+
+  const { isLoading: isMintConfirming, isSuccess: isMintSuccess } = useWaitForTransactionReceipt({
+    hash: mintHash,
+  });
+
+  // Check USDC allowance
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: contracts.fakeUsdc.address,
+    abi: contracts.fakeUsdc.abi,
+    functionName: "allowance",
+    args: address ? [address, marketId as Address] : undefined,
+    query: {
+      enabled: !!address && !!marketId,
+    },
+  });
+
+  // Handle successful approve
+  useEffect(() => {
+    if (isApproveSuccess && pendingOption && shares[pendingOption]) {
+      refetchAllowance();
+      // Proceed to mint after approval
+      const amount = shares[pendingOption];
+      const amountInUSDC = parseUnits(amount.toString(), 6);
+      const functionName = pendingOption === "yes" ? "mintYes" : "mintNo";
+
+      writeMint({
+        address: marketId as Address,
+        abi: BTCPredictionMarketABI,
+        functionName,
+        args: [amountInUSDC],
+      });
+    }
+  }, [isApproveSuccess]);
+
+  // Handle successful mint
+  useEffect(() => {
+    if (isMintSuccess && pendingOption) {
+      const option = market?.options.find((o) => o.id === pendingOption);
+      setShowConfetti(true);
+      setSuccessMessage(`🎉 ${shares[pendingOption]} fUSDC placed on "${option?.label}"!`);
+      setShares({ ...shares, [pendingOption]: 0 });
+      setPendingOption("");
+
+      // Refetch market data to update statistics
+      refetchMarket();
+
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 3000);
+    }
+  }, [isMintSuccess]);
 
   const CategoryIcon = Rocket; // Always use Crypto icon for BTC markets
 
@@ -90,18 +157,39 @@ export default function MarketPage({ params }: PageProps) {
     setShares({ ...shares, [optionId]: numValue });
   };
 
-  const handlePlacePrediction = (optionId: string) => {
+  const handlePlacePrediction = async (optionId: string) => {
     const shareCount = shares[optionId] || 0;
-    if (shareCount > 0) {
-      const option = market?.options.find((o) => o.id === optionId);
-      setShowConfetti(true);
-      setSuccessMessage(`🎉 ${shareCount} shares placed on "${option?.label}"!`);
-      setShares({ ...shares, [optionId]: 0 });
-      setSelectedOption("");
+    if (shareCount <= 0 || !address || !marketId) return;
 
-      setTimeout(() => {
-        setSuccessMessage("");
-      }, 3000);
+    try {
+      setPendingOption(optionId);
+      const amountInUSDC = parseUnits(shareCount.toString(), 6); // USDC has 6 decimals
+
+      // Check if allowance is sufficient
+      const currentAllowance = (allowance as bigint) || BigInt(0);
+
+      if (currentAllowance < amountInUSDC) {
+        // Need to approve first
+        writeApprove({
+          address: contracts.fakeUsdc.address,
+          abi: contracts.fakeUsdc.abi,
+          functionName: "approve",
+          args: [marketId as Address, amountInUSDC],
+        });
+      } else {
+        // Already approved, proceed to mint
+        const functionName = optionId === "yes" ? "mintYes" : "mintNo";
+
+        writeMint({
+          address: marketId as Address,
+          abi: BTCPredictionMarketABI,
+          functionName,
+          args: [amountInUSDC],
+        });
+      }
+    } catch (error) {
+      console.error("Prediction error:", error);
+      setPendingOption("");
     }
   };
 
@@ -217,23 +305,54 @@ export default function MarketPage({ params }: PageProps) {
                   </div>
                   <Button
                     onClick={() => handlePlacePrediction(option.id)}
-                    disabled={!shares[option.id] || shares[option.id] <= 0}
+                    disabled={
+                      !shares[option.id] ||
+                      shares[option.id] <= 0 ||
+                      !address ||
+                      (pendingOption === option.id && (isApprovePending || isMintPending || isApproveConfirming || isMintConfirming))
+                    }
                     className="disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:translate-x-0 disabled:hover:translate-y-0 flex items-center gap-2"
                     size="lg"
                   >
-                    <Rocket className="w-4 h-4" />
-                    Go
+                    {pendingOption === option.id && (isApprovePending || isApproveConfirming) ? (
+                      <>
+                        <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Approving...
+                      </>
+                    ) : pendingOption === option.id && (isMintPending || isMintConfirming) ? (
+                      <>
+                        <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Minting...
+                      </>
+                    ) : (
+                      <>
+                        <Rocket className="w-4 h-4" />
+                        Go
+                      </>
+                    )}
                   </Button>
                 </div>
 
-                {shares[option.id] > 0 && (
-                  <div className="mt-4 p-3 bg-yellow-300 border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
-                    <p className="text-[10px] font-bold text-black uppercase flex items-center gap-2">
-                      <Money className="w-4 h-4" />
-                      Cost: ${(shares[option.id] * option.probability).toFixed(2)}
-                    </p>
-                  </div>
-                )}
+                {shares[option.id] > 0 && (() => {
+                  const cost = calculateLMSRCost(
+                    parseFloat(blockchainMarket.yesTokenSupply),
+                    parseFloat(blockchainMarket.noTokenSupply),
+                    shares[option.id],
+                    option.id === "yes",
+                    100
+                  );
+                  return (
+                    <div className="mt-4 p-3 bg-yellow-300 border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
+                      <p className="text-[10px] font-bold text-black uppercase flex items-center gap-2">
+                        <Money className="w-4 h-4" />
+                        Cost: ${cost.toFixed(2)} fUSDC
+                      </p>
+                      <p className="text-[8px] text-black mt-1">
+                        Avg price: ${(cost / shares[option.id]).toFixed(4)} per share
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

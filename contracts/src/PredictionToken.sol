@@ -21,6 +21,14 @@ contract PredictionToken is ERC20 {
     }
 
     /**
+     * @dev Override decimals to match USDC (6 decimals instead of default 18)
+     * This ensures 1:1 ratio between USDC locked and tokens minted
+     */
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    /**
      * @dev Mint tokens to an address (only callable by market)
      */
     function mint(address to, uint256 amount) external onlyMarket {

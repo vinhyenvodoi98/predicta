@@ -1,10 +1,10 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployedAt": "2026-02-04T13:46:40Z",
+  "deployedAt": "2026-02-04T14:15:02Z",
   "contracts": {
     "PredictionMarketFactory": {
-      "address": "0x08CDE85ED085974B4241258890e7A2a68218e47B",
+      "address": "0x20883a87761541a0F8E9A38f17c0C33b8468361C",
       "abi": "abis/PredictionMarketFactory.json"
     },
     "ChainlinkPriceFeed": {

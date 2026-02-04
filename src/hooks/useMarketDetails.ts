@@ -4,8 +4,9 @@
 
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
-import { Address, formatEther } from "viem";
+import { Address, formatUnits } from "viem";
 import BTCPredictionMarketABI from "@/config/abis/BTCPredictionMarket.abi.json";
+import { calculateLMSRPrices } from "@/utils/lmsr";
 
 export interface MarketDetails {
   address: Address;
@@ -21,6 +22,7 @@ export interface MarketDetails {
   yesToken: Address;
   noToken: Address;
   priceFeed: Address;
+  usdc: Address;
   yesProbability: number;
   noProbability: number;
   status: "open" | "closed" | "resolved";
@@ -86,12 +88,13 @@ export function useMarketDetails(
         console.log(`[useMarketDetails] Using default name for ${marketAddress}`);
       }
 
-      // Calculate probabilities based on token supply
-      const totalSupply = marketInfo._yesTokenSupply + marketInfo._noTokenSupply;
-      const yesProbability = totalSupply > 0
-        ? Number(marketInfo._yesTokenSupply) / Number(totalSupply)
-        : 0.5;
-      const noProbability = 1 - yesProbability;
+      // Calculate probabilities using LMSR (Logarithmic Market Scoring Rule)
+      const yesSharesNum = Number(formatUnits(marketInfo[6], 6));
+      const noSharesNum = Number(formatUnits(marketInfo[7], 6));
+
+      const lmsrPrices = calculateLMSRPrices(yesSharesNum, noSharesNum, 100);
+      const yesProbability = lmsrPrices.yesPrice;
+      const noProbability = lmsrPrices.noPrice;
 
       // Determine status
       let status: "open" | "closed" | "resolved" = "open";
@@ -109,12 +112,13 @@ export function useMarketDetails(
         resolved: marketInfo[2],
         btcAboveTarget: marketInfo[3],
         actualPrice: Number(marketInfo[4]) / 1e8,
-        totalEthLocked: formatEther(marketInfo[5]),
-        yesTokenSupply: formatEther(marketInfo[6]),
-        noTokenSupply: formatEther(marketInfo[7]),
+        totalEthLocked: formatUnits(marketInfo[5], 6), // USDC has 6 decimals
+        yesTokenSupply: formatUnits(marketInfo[6], 6), // USDC has 6 decimals
+        noTokenSupply: formatUnits(marketInfo[7], 6), // USDC has 6 decimals
         yesToken: marketInfo[8],
         noToken: marketInfo[9],
         priceFeed: marketInfo[10],
+        usdc: marketInfo[11],
         yesProbability,
         noProbability,
         status,
