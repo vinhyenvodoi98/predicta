@@ -10,3 +10,6 @@ export { Globe } from "./Globe";
 export { Car } from "./Car";
 export { Dice } from "./Dice";
 export { Money } from "./Money";
+export { Zap } from "./Zap";
+export { Shield } from "./Shield";
+export { Coins } from "./Coins";
