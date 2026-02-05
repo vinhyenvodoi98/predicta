@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAccount, useBalance, useEnsName, useSendTransaction, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { parseEther, formatUnits } from "viem";
 import { contracts } from "@/config/contracts";
+import { YellowBalance } from "./YellowBalance";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -111,7 +112,7 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
         {/* Content */}
         <div className="p-6">
           {/* FakeUSDC Balance */}
-          <div className="mb-6 bg-emerald-50 border-4 border-emerald-600 p-4">
+          <div className="mb-4 bg-emerald-50 border-4 border-emerald-600 p-4">
             <div className="text-[8px] font-bold text-emerald-700 uppercase mb-2">
               FakeUSDC Balance
             </div>
@@ -121,6 +122,11 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
             <div className="text-[8px] text-emerald-600 mt-1">
               Testnet currency for prediction markets
             </div>
+          </div>
+
+          {/* Yellow Network Balance */}
+          <div className="mb-6">
+            <YellowBalance />
           </div>
 
           {/* Step: Wallet Select */}
