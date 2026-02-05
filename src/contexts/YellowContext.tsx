@@ -86,11 +86,21 @@ export function YellowProvider({ children }: { children: React.ReactNode }) {
       if ((client as any).ws) {
         const ws = (client as any).ws;
         ws.addEventListener('close', (event: CloseEvent) => {
-          console.warn(`[YellowProvider] WebSocket closed: ${event.code} ${event.reason}`);
+          const code = event.code || 1000; // Default to normal closure if code is undefined
+          const reason = event.reason || 'Connection closed';
+
+          console.log(`[YellowProvider] WebSocket closed: code=${code}, reason="${reason}"`);
           setIsConnected(false);
           setIsAuthenticated(false);
-          if (event.code !== 1000) { // 1000 = normal closure
-            setError(new Error(`Connection closed unexpectedly: ${event.reason || 'Unknown reason'}`));
+
+          // Only set error for abnormal closures (not 1000 = normal closure)
+          // and when we have a valid code (not undefined)
+          if (event.code && event.code !== 1000) {
+            console.warn(`[YellowProvider] ⚠️ Abnormal WebSocket closure detected`);
+            setError(new Error(`Connection closed unexpectedly: ${reason}`));
+          } else {
+            // Normal closure - clear any existing errors
+            setError(null);
           }
         });
 
@@ -126,6 +136,7 @@ export function YellowProvider({ children }: { children: React.ReactNode }) {
         setIsConnected(false);
         setIsAuthenticated(false);
         setSessionKey(null);
+        setError(null); // Clear errors on intentional disconnect
       }
     }
   }, []);
